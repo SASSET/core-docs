@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>models/Partitions.js - Documentation</title>
+
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-AccountLib.html">AccountLib</a><ul class='methods'><li data-type='method'><a href="module-AccountLib.html#.getAccount">getAccount</a></li><li data-type='method'><a href="module-AccountLib.html#.setAccount">setAccount</a></li></ul></li><li><a href="module-AssetModel.html">AssetModel</a><ul class='methods'><li data-type='method'><a href="module-AssetModel.html#.create">create</a></li><li data-type='method'><a href="module-AssetModel.html#.delete">delete</a></li><li data-type='method'><a href="module-AssetModel.html#.findAsset">findAsset</a></li><li data-type='method'><a href="module-AssetModel.html#.findAssets">findAssets</a></li><li data-type='method'><a href="module-AssetModel.html#.findByIdentifier">findByIdentifier</a></li><li data-type='method'><a href="module-AssetModel.html#.get">get</a></li><li data-type='method'><a href="module-AssetModel.html#.getPartitionsAssets">getPartitionsAssets</a></li><li data-type='method'><a href="module-AssetModel.html#.setIdentifiers">setIdentifiers</a></li><li data-type='method'><a href="module-AssetModel.html#createRevisionHistory">createRevisionHistory</a></li><li data-type='method'><a href="module-AssetModel.html#delete">delete</a></li><li data-type='method'><a href="module-AssetModel.html#lastRevision">lastRevision</a></li><li data-type='method'><a href="module-AssetModel.html#~delete">delete</a></li><li data-type='method'><a href="module-AssetModel.html#~set">set</a></li><li data-type='method'><a href="module-AssetModel.html#~value">value</a></li></ul></li><li><a href="module-PartitionModel.html">PartitionModel</a></li></ul><h3>Namespaces</h3><ul><li><a href="Gizmo.html">Gizmo</a><ul class='methods'><li data-type='method'><a href="Gizmo.html#.stripCommonRoot">stripCommonRoot</a></li><li data-type='method'><a href="Gizmo.html#.summarizePaths">summarizePaths</a></li><li data-type='method'><a href="Gizmo.html#.valueTypes">valueTypes</a></li></ul></li></ul>
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">models/Partitions.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Partition Mongoose Model - Used to create/edit/delete any Partition documents, as well as MDB documents in the Field, 
+ * Asset and Revision collections that may be associated to the the Partition(s)
+ * 
+ * @module PartitionModel
+ * @see {@link http://mongoosejs.com/|Mongoose NodeJS Module}
+ * @see {@link http://mongoosejs.com/docs/documents.html|Mongoose Documents}
+ * @see {@link http://mongoosejs.com/docs/middleware.html|Mongoose Middleware}
+ * @see {@link http://mongoosejs.com/docs/guide.html|Mongoose Schema}
+ * @see {@link http://mongoosejs.com/docs/schematypes.html|Mongoose Schema Types}
+ * @see {@link http://bluebirdjs.com/docs/api-reference.html|Bluebird Promise API}
+ */
+'use strict'
+
+const _             = require( 'moar-lodash' )
+const Promise       = require( 'bluebird' )
+const Async         = require( 'async' )
+const Util          = require( 'util' )
+const AppRoot       = require( 'app-root-path' )
+const Path          = require( 'path' )
+const Columnify     = require( 'columnify' )
+
+const _m            = AppRoot.require( './lib/helpers/mongoose-helper' )
+const ModelName     = _m.file2Model( __filename )
+const Log           = AppRoot.require( './lib/utils/logger' )({ model: `${ModelName}` })
+const AccountLib    = AppRoot.require( './lib/account' )
+const AppError      = AppRoot.require( "./lib/exceptions" ).init
+
+Log.debug( `Model file loaded` )
+
+/**
+ * @name     PartitionModel
+ * @param    {Mongoose}                  Mongoose            Mongoose instance
+ * @param    {module:PartitionModel~Schema}  Mongoose.Schema     Schema thingy
+ * @param    {module:PartitionModel~Types}   Mongoose.Types      Mongoose document attribute types
+ * @returns  {Mongoose.model}                                Partition Mongoose model
+ */
+const PartitionModel = module.exports = Mongoose => {
+    // Return this model, if it already exists
+    if( ! _.isUndefined( Mongoose.models[ ModelName ] ) )
+        return Mongoose.models[ ModelName ]
+
+    /** 
+     * Reference to the Mongoose Schema object
+     *
+     * @typedef {Object} Schema
+     * @name    module:PartitionModel~Schema
+     * @member  {Mongoose.Schema}
+     * @see     {@link http://mongoosejs.com/docs/guide.html|Mongoose Schema}
+     * @constant
+     * @readonly
+     */
+    const Schema = Mongoose.Schema
+
+    /** 
+     * Reference to the Mongoose Types object
+     *
+     * @name Types
+     * @member  {Mongoose.Types}
+     * @see {@link http://mongoosejs.com/docs/schematypes.html|Mongoose Schema Types}
+     * @constant
+     * @readonly
+     */
+    const Types  = Mongoose.Types
+
+    /**
+     * The ObjectId of a Mongoose document. 
+     *
+     * @typedef {string} ObjectId
+     * @name module:PartitionModel~ObjectId
+     * @see {@link http://mongoosejs.com/docs/api.html#schema-objectid-js|Mongoose ObjectId reference}
+     * @see {@link https://docs.mongodb.com/manual/reference/method/ObjectId/| MongoDB ObjectId reference}
+     * @example  Mongooses ObjectId type is an (lowercase)alpha/numeric string 24 character in length, 
+     * for example: 507f191e810c19729de860ea
+     */
+
+    /**
+     * PartitionError exceptions
+     *
+     * @typedef     {Error} PartitionException
+     * @name        module:PartitionModel~AssetException
+     * @member      {Error}
+     * @readonly
+     * @property    {string}    name        Name of error encountered
+     * @property    {number}    code        Code of error encountered
+     * @property    {string}    message     Message of error
+     * @property    {function}  toString    Returns the error name and message
+     */
+
+    /**
+     * Partition Mongoose Schema
+     *
+     * @property    {string}                            name            Partitions name (Unique value)
+     * @property    {string}                            description     Description of partition
+     * @property    {boolean}                           status          Status of the partition (true = enabled)
+     * @property    {module:PartitionModel~ObjectId[]}  _groups         Array of groups granted access to this partition
+     * @property    {module:PartitionModel~ObjectId[]}  _fields         Array of ObjectId values from the Field collection
+     */
+    const PartitionSchema = new Schema({
+        name: {
+            type: Schema.Types.String,
+            trim: true,
+            select: true,
+            unique: true,
+            required: true,
+            minlength: 4,
+            maxlength: 30
+        },
+        description: Schema.Types.String,
+        status: {
+            type: Schema.Types.Boolean,
+            default: true
+        },
+        _groups: [{
+            type: Schema.Types.ObjectId,
+            ref: 'Group'
+        }],
+        _fields: [{
+            type: Schema.Types.ObjectId,
+            ref: 'Field'
+        }],
+        keyIncr: {
+            type: Schema.Types.Number,
+            default: 0
+        }
+    }, {
+        /**
+         * @type Date
+         * @see http://mongoosejs.com/docs/guide.html#timestamps
+         * @ignore
+         */
+        timestamps: {
+            createdAt: 'createdAt',
+            updatedAt: 'updatedAt'
+        },
+        toObject: {
+            virtuals: true
+        },
+        toJSON: {
+            virtuals: true 
+        }
+    })
+
+    /*
+    PartitionSchema.statics.getKey = function( findObj, limitOrCb ){
+        return new Promise( ( res, rej ) => {
+
+        }).asCallback()
+    }*/
+
+    PartitionSchema.statics.primaryKey = {
+        current: function( callback ){
+            return new Promise( ( res, rej ) => {
+                return res( 123 )
+            }).asCallback( callback )
+        },
+        increment: function( callback ){
+            return new Promise( ( res, rej ) => {
+                return res( 'Set to... ???' )
+            }).asCallback( callback )
+        },
+        reset: function( valueorCb, callback ){
+            return new Promise( ( res, rej ) => {
+                return res( 'Set to... ???' )
+            }).asCallback( callback )
+        }
+    }
+
+    // PLUGINS/MIDDLEWARE PACKAGES-----------------------------------------
+
+    // Load the below plugins via the bulk auto plugin loader
+    /*PartitionSchema.plugin( require('./middleware/PluginLoader') , {
+        // Plugin to increment the documents revision number (__v)
+        General    : 'DocVersionIncrement',
+        // A plugin that turns the ugly E11000 (Unique index validation) error into a friendly error
+        nocategory : 'mongoose-unique-validator'
+    })*/
+
+    // MIDDLEWARE ---------------------------------------------------------
+
+    /**
+     * Since most of the instance methods, static methods and virtual properties rely on the partition fields,
+     * automatically populate the _fields reference to the field model documents for every find-like query
+     */
+    _.forEach( [ 'find', 'findOne', 'findOneById', 'findOneAndRemove', 'findOneAndUpdate' ], query => {
+        PartitionSchema.pre( query, function( next ) {
+            this.populate( '_fields' )
+            next()
+        })
+    })
+
+    // --------------------------------------------------------------------
+
+    // Middleware for any update-type queries
+    _.forEach( [ 'save', 'update', 'findOneAndUpdate' ], query => {
+        // Increment the Mongoose (__v)ersion for any updates
+        PartitionSchema.pre( query, function( next ) {
+            this.increment()
+            next()
+        })
+    })
+
+    // VIRTUAL PROPERTIES -------------------------------------------------
+    /*
+    PartitionSchema.virtual( 'foobar' )
+        .get(function() {
+            console.log("TEST!...")
+            return 'tester'
+        })
+        .set(function( val ){
+            console.log('Setting it to %s',val || 'None?..')
+        })
+    */
+
+    /**
+     * Retrieve the primary field for said partition
+     *
+     * @returns {object}    Returns the entire field, if the primary is true
+     
+    PartitionSchema.virtual('primaryField').get(function() {
+        const primary = _.find( this._fields, f => !!f.primary )
+
+        return ! _.isEmpty( primary )
+            ? primary
+            : undefined
+    })
+
+    PartitionSchema.virtual( 'increnemt' )
+        .get( () => {
+            const primary = _.find( this._fields, f => !!f.primary )
+
+            return ! _.isEmpty( primary )
+                ? primary
+                : undefined
+        })
+        .set( incVal => {
+
+        })
+
+    PartitionSchema.testVal = this.subModel
+
+    PartitionSchema.subModel = {
+        foo: function( findObj, limitOrCb, callback ){
+            return new Promise( ( res, rej ) => {
+                const _findObj = null
+
+                if( _m.isObjectId( findObj ) ){
+                    _findObj = { _id: findObj }
+                }
+                else if( _.isObject( findObj ) ){
+                    _findObj = findObj
+                }
+                else {
+                    return rej( ( ! findObj ? 'No' : 'Invalid') + ' assset criteria provided' )
+                }
+
+                const docQuery = this.find( _findObj )
+
+                if( _.isNumber( limitOrCb ) ){
+                    docQuery.limit( limitOrCb )
+                }
+
+                docQuery.exec( ( err, docData ) => {
+                    if( err ){
+                        return rej( err )
+                    }
+
+                    return rej( docData )
+                })
+            }).asCallback( ( args  => _.findLast( args, a => _.isFunction( a ) ) )( arguments ) )
+        }
+    }*/
+
+    // INSTANCE METHODS ---------------------------------------------------
+
+    /**
+     * Verify an assets attribute value against the corresponding field settings in the assets partition
+     *
+     * @param   {object|string}     options         Object containing the attribute/field name &amp; value, or the attribute
+     *                                              name/field ID (Which if provided as a string, value will be
+     *                                              automatically nulled, since it cant be defined anywhere else
+     * @param   {function}          callback        Callback to be executed (if passed)
+     * @var     {string}            options.attr    Name attribute or ID of field
+     * @var     {Mixed}             options.value   Value of attribute (Null if undefined)
+     * @var     {string|ObjectId}   options.assetId If the attribute value is being validated while updating the asset
+     *                                              (as opposed to creating), then set the asset ID (This is required
+     *                                              for some validations such as unique)
+     * @returns {boolean}
+     */
+    PartitionSchema.methods.verifyAttr = function( options, callback ) {
+        return new Promise( ( res, rej ) => {
+            let assetId
+
+            // If the options.assetId is provided, then were updating an asset, not creating a new one, so verify that
+            // the asset ID provided is a valid ObjectId
+            // The validation that this is a real asset ID is done in the validation factory init
+            if( ! _.isUndefined( options.assetId ) ){
+                if( _m.isObjectId( options.assetId ) )
+                    assetId = options.assetId
+                else
+                    return rej( new AppError({
+                        code: 'partition.verifyAttr.options.badAssetId',
+                        data: _.typeof(options.assetId)
+                    }) )
+            }
+
+            // If there's no fields in this partition, obviously its an invalid attribute
+            if( _.isEmpty( this._fields ) )
+                return rej( new AppError( 'partition.verifyAttr.noPartitionFields' ) )
+
+            // If the fields aren't populated, then reject
+            // @todo Should just populate them if they arent already populated
+            if( !_m.isPopulated( this._fields[0] ) )
+                return rej( new AppError( 'partition.verifyAttr.fields.notPopulated' ) )
+
+            let attr
+
+            // Static attributes (Need to be validated differently than dynamic)
+            const statics = [ 'status' ]
+
+            // If options is a string, then its the field/attr name or ID (and no value is provided)
+            if( _.isString( options ) )
+                attr = options
+
+            // If options is an object, it should contain the attr and value
+            if( _.isObject( options ) &amp;&amp; _.isString( options.attr ) )
+                attr = options.attr
+
+            // Reject!.. No attribute was provided
+            else
+                return rej( new AppError( 'partition.verifyAttr.attributes.noAttributes' ) )
+
+            // Default the value to null..
+            const value = _.isUndefined( options.value ) ? null : options.value
+
+            // If its a static attr, just return true for now
+            // @todo Need to actually do some checking
+            if( _.includes( statics, attr ) )
+                res( 'STATIC OK' )
+
+            // Find the first field that matches the attribute string to the field ID or name
+            const field = _.find( this._fields, f => f._id === attr || f.name === attr )
+
+            // Obviously no field found, then don't validate it
+            if( ! field )
+                return rej( new AppError({
+                    code: 'partition.verifyAttr.fields.notFound',
+                    data: [ attr, this.name, this._id ]
+                }))
+
+            // Is it required and populated?
+            if( ( field.required === true || field.primary === true ) &amp;&amp; _.isEmpty( value ) )
+                return rej( new AppError({
+                    code: 'partition.verifyAttr.attributes.noValue',
+                    data: field.name
+                }) )
+
+            // Array of promises to validate
+            const doValidations = []
+
+            // Validation factory (Returns any validation functions, unique, regex, etc)
+            const validationFactory = Mongoose.models.Field.validations({
+                partitionId: this._id,
+                value: value,
+                field: attr,
+                assetId: assetId
+            })
+
+            // Add the unique check if this is primary or unique
+            if( field.primary === true || field.unique === true )
+                doValidations.push( validationFactory.unique() )
+
+            // Add the regex check if regex is populated
+            if( field.regex )
+                doValidations.push( validationFactory.regex( field.regex ) )
+
+            // If a 'max' size/length is set,
+            if( _.isNumber( field.max ) ){
+                // If this is a numeric or timestamp, then use the max SIZE..
+                if( _.includes( [ 'timestamp', 'numeric' ], field.type ) )
+                    doValidations.push( validationFactory.max( field.max ) )
+
+                // Otherwise, use max LENGTH
+                else
+                    doValidations.push( validationFactory.maxLength( field.max ) )
+            }
+
+            // If a 'min' size/length is set,
+            if( _.isNumber( field.min ) ){
+                // If this is a numeric or timestamp, then use the min SIZE..
+                if( _.includes( [ 'timestamp', 'numeric' ], field.type ) )
+                    doValidations.push( validationFactory.min( field.min ) )
+
+                // Otherwise, use min LENGTH
+                else
+                    doValidations.push( validationFactory.minLength( field.min ) )
+            }
+
+            // Run all the promises, and only resolve this promise if all of those were successful
+            Promise.all( doValidations )
+                .then( data => res( true ) )
+                .catch( err => rej( new AppError({
+                    code: 'partition.verifyAttr.validateAction',
+                    data: err
+                }) ) )
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Retrieve select Partition Field ID's by the field names (ORM METHOD)
+     *
+     * @param   {string|array}  fieldNames      String of field names, or array of multiple.
+     * @return  {object}        Object of field IDs and Names, with the field names as the keys
+     */
+    PartitionSchema.methods.getFieldIdsByName = function( fieldNames ) {
+        return _.chain( this._fields )
+            .filter( f => _.includes( fieldNames, f.name ) )
+            .reduce( ( end, f ) => {
+                end[ f.name ] = f._id
+                return end
+            },{})
+            .value()
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Add asset to associated partition
+     *
+     * @param   {object}    attributes  Assets attributes (In AttrName: value format)
+     * @param   {function}  callback    Callback to execute (As opposed to a Promise)
+     * @returns {Promise}
+     */
+    PartitionSchema.methods.createAsset = function( attributes, callback ) {
+        return new Promise( ( res, rej ) => {
+            if( ! _.isObject( attributes ) )
+                return rej( new AppError({
+                    code: 'partition.asset.create.attributes.badType',
+                    data: _.typeof(attributes)
+                }))
+
+            // Object to be populated for any possible attribute validation errors
+            const validationErrors = {}
+
+            // The Async library expects an array, so turn the object into an array of objects
+            const validateAttrs = _.map( attributes, ( value, key ) => ( { attr: key, value: value } ) )
+
+            // Look for a primary field in this partition
+            const primaryField =  _.find( this._fields, f => f.primary === true )
+
+            // Check if there's a primary field, if so, make sure there's an attribute for it
+            if( ! _.isEmpty( primaryField ) &amp;&amp; _.isEmpty( attributes[ primaryField.name ] ) )
+                return rej( new AppError({
+                    code: 'partition.asset.create.attributes.primaryDuplicate',
+                    data: primaryField.name
+                }) )
+
+            // Validate the assets attributes asynchronously
+            Async.each( validateAttrs, ( attrVal, done ) => {
+                // Validate the attributes value against the field settings..
+                this.verifyAttr( attrVal )
+                    .catch( err => {
+                        validationErrors[ attrVal.attr ] = err
+                    })
+                    .finally( () => done() ) // Close every async call
+                //.catch( err => rej( _.setException( err ) ) )
+            }, err => {
+                if( err )
+                    return rej( new AppError({
+                        code: 'partition.asset.create.attributes.validationsFailed',
+                        data: err
+                    }) )
+
+                // Check for any validation errors
+                if( ! _.isEmpty( validationErrors ) ) {
+                    return rej( new AppError({
+                        code: 'partition.asset.create.attributes.validationsFailed',
+                        data: validationErrors
+                    }) )
+                }
+
+                // If it hasn't been stopped by an error yet, then it should be good to go
+                Mongoose.models.Asset.createAsset( this._id, attributes )
+                    .then( data => res( data ) )
+                    .catch( err => rej( new AppError({
+                        code: 'partition.asset.create.saveFailed',
+                        data: err
+                    }) ) )
+            })
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Create multiple assets - These do not get created async currently, as they need to validate each asset as they
+     * get created, (eg: if two assets have the same primary value, async will create them, since the unique check will
+     * pass)
+     * @todo    Add some checks in here (such as unique, etc), so this CAN execute asynchronously
+     *
+     * @param   {array}     attributes  Array of asset attribute objects
+     * @param   {function}  callback    Callback to execute, if not handling as a promise
+     * @returns {Promise}   Bluebird promise, or callback gets executed
+     * @todo    Should be able to provide a number for the attributes, which will attempt to create n assets with no attributes (which should work if partition has no primary/required fields)
+     * @todo    If an asset fails to be created, it should still move on to the next
+     */
+    PartitionSchema.methods.createAssets = function( attributes, callback ) {
+        return new Promise( ( res, rej ) => {
+            if( ! _.isArray( attributes ) )
+                return rej( new AppError({
+                    code: 'partition.assets.create.attributes.badType',
+                    data: _.typeof( attributes )
+                }) )
+
+            if( ! _.every( attributes, _.isObject ) )
+                return rej( new AppError( 'partition.assets.create.attributes.badValueTypes' ) )
+
+            // Execute the asset additions in order (Async, but not parallel)
+            Async.mapSeries( attributes, ( thisAsset, asyncCb ) => {
+                // The createAsset asynchronously validates the attribute values
+                this.createAsset( thisAsset, ( err, thisResult ) => asyncCb( err, thisResult ) )
+            }, ( err, results ) => {
+                if( err )
+                    return rej( new AppError({
+                        code: 'partition.assets.create.createFailed',
+                        data: err
+                    }) )
+
+                res( results )
+            })
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Asynchronously delete multiple assets; This is really just a wrapper around asynchronously executing the
+     * Partition.deleteAsset() method
+     *
+     * @param   {array|object}  options                 Delete options (assets and other option(s))
+     * @param   {function}      callback                Callback to execute (or promise returned)
+     * @var     {array}         options.assets          Array of asset IDs or identifiers
+     * @var     {string}        options.assets[*]       Asset ID or identifier
+     * @var     {boolean}       options.requireDelete   Require deletion of assets to be successful
+     * @return  {Promise}       Promise returned, or callback executed (if provided)
+     * @todo    Need to hand down the asyncResults even for a failure, should map the array, using the asset ID as a key
+     * @todo    This should delete the documents directly, as opposed to async executing the deleteAsset (maybe)
+     */
+    PartitionSchema.methods.deleteAssets = function( options, callback ) {
+        return new Promise( ( res, rej ) => {
+            let assets
+            let requireDelete = false
+
+            // Of options is an object.. Check for the assets, and the requireDelete setting
+            if( _.isPlainObject( options ) ){ // This fails if its just _.isObject.. weird
+                if( _.isEmpty( options.assets ) )
+                    return rej( new AppError( 'partition.assets.delete.noAssetsSpecified' ) )
+
+                assets = options.assets
+
+                if( _.isEmpty( options.requireDelete ) )
+                    requireDelete = !!options.requireDelete
+            }
+
+            // If its an array, just make sure its not empty
+            else if( _.isArray( options ) ){
+                if( _.isEmpty( options ) )
+                    return rej( new AppError( 'partition.assets.delete.noAssetsSpecified' ) )
+
+                if( ! _.every( options, _.isString ) )
+                    return rej( new AppError( 'partition.assets.delete.badAssetId' ) )
+
+                assets = options
+            }
+
+            // Anything other than an array or object should be rejected
+            else {
+                return rej( new AppError( 'partition.assets.delete.noAssetsSpecified' ) )
+            }
+
+            Async.mapSeries( assets, ( thisAsset, asyncCb ) => {
+                this.deleteAsset( {
+                    asset: thisAsset,
+                    requireDelete: requireDelete
+                }, ( err, result ) => asyncCb( err, result ))
+            }, ( err, results ) => ! _.isNull( err )
+                ? rej( new AppError({
+                    code: 'partition.assets.delete.deleteFailed',
+                    data: err
+                }) )
+                : res( results ) )
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Delete a single asset from associated partition, this will allow the deletion of the asset, without having to
+     * create a new asset object. The asset to be deleted can be identified by the assets ObjectId, or the assets
+     * identifier (If the partition has a primary field)
+     *
+     * @param   {string|object} options                 String (assets ID or identifier), or an object with the options
+     * @param   {function}      callback                Callback to execute (or promise returned)
+     * @var     {string}        options.asset           Asset ID or assets Identifier
+     * @var     {boolean}       options.requireDelete   If true, then a failure will be returned when an asset
+     *                                                  is not deleted (for any reason, such as it doesn't exist
+     *                                                  in the first place)
+     * @return  {Promise}   If an asset was deleted, then the assets data will be resolved, if no asset was deleted,
+     *                      and requireDelete = true, then the promise will be rejected
+     */
+    PartitionSchema.methods.deleteAsset = function( options, callback ) {
+        return new Promise( ( res, rej ) => {
+            let asset
+            let requireDelete = false
+
+            if( ! _.isObject( options ) ){
+                asset = options
+            }
+            else {
+                if( _.isEmpty( options.asset ) )
+                    return rej( new AppError( 'partition.asset.delete.noAssetId' ) )
+                else
+                    asset = options.asset
+
+                if( ! _.isUndefined( options.requireDelete ) )
+                    requireDelete = !!options.requireDelete
+            }
+
+            // If we were given something other than an asset ID, then try to find an asset with that hostname
+            if( ! _m.isObjectId( asset ) ){
+                // This promise gets handled a little differently, since we need to differentiate between the
+                // findAssetByIdentifer failing, and the document remove failing
+                this.findAssetByIdentifier( asset )
+                    .then( assetDoc => {
+                        Mongoose.models.Asset.where().findOneAndRemove( {
+                            _partition: this._id,
+                            _id: assetDoc._id.toString()
+                        } )
+                            .then( data => res( data ) )
+                            .catch( err => rej( new AppError({
+                                code: 'partition.asset.delete.deleteFailed',
+                                data: err
+                            }) ) )
+                    })
+                    .catch( err => {
+                        // If no asset was found with this identifier, and requireDelete is disabled,
+                        // then resolve, otherwise, reject
+                        return requireDelete === true
+                            ? rej( new AppError({
+                            code: 'partition.asset.delete.deleteFailed.notFound',
+                                data: err
+                            }) )
+                            : res( undefined )
+                    })
+            }
+
+            // If we were given an asset ID, then handle that directly
+            else {
+                Mongoose.models.Asset.where().findOneAndRemove( {
+                    _partition: this._id,
+                    _id: asset
+                } )
+                    .then( data => {
+                        if( _.isEmpty( data ) &amp;&amp; requireDelete === true )
+                            return rej( new AppError({
+                                code: 'partition.asset.delete.deleteFailed.notFound',
+                                data: err
+                            }) )
+
+                        // If the data is empty, return undefined, otherwise, return the asset
+                        return res( _.isEmpty( data )
+                            ? undefined
+                            : data )
+                    } )
+                    .catch( err => rej( new AppError({
+                        code: 'partition.asset.delete.deleteFailed',
+                        data: err
+                    }) ) )
+            }
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Find an asset by its identifier - This isn't much different than the other asset searches, other than it just
+     * specifies the where object for you. If were provided an array of identifiers, then return an object, with the
+     * identifier value as the key, and only return the identifiers that were found to have assets - Meaning if an
+     * identifier was provided and no asset was found for it, then don't return it
+     *
+     * @param   {string|number|array}   identifier  Identifier to search for (Usually a string), or an array of identifiers,
+     *                                              if an array is provided, then an object will be provided when the
+     *                                              callback/Promise is resolved, with the identifier as the key, and the
+     *                                              value as the assets mongoose document
+     * @param   {function}              callback    Callback to execute if needed, otherwise a Promise is returned
+     * @returns {Promise}               A promise is returned, or the callback is executed (if defined)
+     * @note    This is the same thing as Asset.findByIdentifier(), except since this is an instance method, the
+     *          partition ID doesn't need to be defined, since it's already stored in the instance document
+     */
+    PartitionSchema.methods.findAssetByIdentifier = function( identifier, callback ){
+        return new Promise( ( res, rej ) => {
+            // Only allow strings or numeric values for the identifier (NOT meaning this is restricting to the field
+            // type, just the value itself)
+            if( ! _.isString( identifier )
+                &amp;&amp; ! _.isNumeric( identifier )
+                &amp;&amp; ! _.isArray( identifier ) )
+                return rej( new Error( 'Valid identifier required (array, string or number type)' ) )
+
+            // The primaryField virtual property will easily get the primary field for us (the entire object)
+            if( _.isEmpty( this.primaryField ) )
+                return rej( new Error( 'No primary field found' ) )
+
+            const primaryField = this.primaryField
+
+            const where = { 'attributes._field': primaryField._id }
+
+            // If were looking for more than one asset, use an array as the where clause
+            if( _.isArray( identifier ) )
+                where[ 'attributes.value' ] = { $in: identifier }
+
+            // Or not
+            else
+                where[ 'attributes.value' ] = identifier
+
+
+            // Query for an asset with the value as the primary fields ID, and the specified identifier
+            // Keep it as a sub-promise, becuase we need the primaryField data for the error
+            Mongoose.models.Asset.find( where )
+                .then( assetData => {
+                    if( _.isEmpty( assetData ) )
+                        return rej( new Error( `No asset found with the ${primaryField.name} '${(_.isArray( identifier ) ? identifier.join("', '") : identifier)}' in this partition` ) )
+
+                    // If we were given an array, then structure an object, with the identifiers as the keys
+                    if( _.isArray( identifier ) ){
+                        const result = {}
+
+                        // Only add the assets that were found, so if there was an identifier provided that doesnt
+                        // exist, then dont add it
+                        _.forEach( assetData, ad => {
+                            let primaryAttr = _.find( ad.attributes, a => a._field._id.toString() === primaryField._id.toString() )
+
+                            result[ primaryAttr.value ] = ad
+                        })
+
+                        res( result )
+                    }
+                    // Otherwise, just return the single asset
+                    else {
+                        return res( assetData[0] )
+                    }
+                })
+                .catch( err => rej( _.setException( err ) ) )
+
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Get partition assets, optionally define a custom selection object. The callback can be defined as either the
+     * first or second parameter. If a selector is NOT defined, then all assets for said partition will be returned.
+     * This is basically just a quick wrapper to the Asset.getAssets() method, and auto populates the partition ID from
+     * the instances ObjectId
+     *
+     * @param   {object|function}   attributesOrCb      Either a callback, or an object of attribute filters
+     * @param   {function}          callback            Callback to execute, optionally
+     * @returns {Promise}      Promise returned, or callback executed
+     */
+    PartitionSchema.methods.getAssets = function( attributesOrCb, callback ){
+        // Since hte Asset.getPartitionsAssets determines which param is the callback, just hand them all down
+
+        return Mongoose.models.Asset.getPartitionsAssets( this._id.toString(), attributesOrCb, callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Delete fields from a partition, as well as remove the field documents from the fields container
+     *
+     * @param   {array|string|function} fieldsOrCb  Single field (string), multiple (array), or all fields (undefined),
+     *                                              If undefined, and using a callback instead of a promise, then
+     *                                              this accepts a function as well
+     * @param   {function}              callback    Callback to execute (Or promise)
+     * @returns {Promise}   Promise, or a callback if provided (Promise gets resolved with field data)
+     * @note    This needs to delete the field(s) from the partitions assets
+     * @note    This should accept field names as well, using the getFieldIdsByNames
+     */
+    PartitionSchema.methods.deleteFields = function( fieldsOrCb, callback ){
+        return new Promise( ( res, rej ) => {
+            let toDelete
+
+            // Do fields even exist?
+            if( _.isEmpty( this._fields ) )
+                return res( undefined )
+
+            // Get the partition Field ID's
+            const partitionFields = _m.getObjectIds( this._fields )
+
+            // If no field(s) are specified (meaning first arg is a callback or undefined), then grab all the fields
+            if( _.isFunction( fieldsOrCb ) || _.isUndefined( fieldsOrCb ) )
+                toDelete = partitionFields
+
+            // If a single field ID was specified
+            else if( _.isString( fieldsOrCb ) || _m.isObjectId( fieldsOrCb ) )
+                toDelete = _.find( partitionFields, pf => pf.toString() === fieldsOrCb.toString() )
+
+            // If its an array, then just retrieve the fields that exist in this partition documents _fields
+            else if( _.isArray( fieldsOrCb ) )
+                toDelete = _.filter( partitionFields, pf => _.findIndex( fieldsOrCb, f => f.toString() === pf.toString() ) !== -1 )
+
+            // If it gets here, then that means fieldsOrCb is not an object ID, or an array...
+            else
+                return rej( `The field IDs specified can be either undefined, an array of ObjectIds, or a single ObjectId - but received a ${_.typeof( fieldsOrCb )}` )
+
+            // If the field(s) provided were not found in the partitions fields, just resolve undefined (since they dont exist to delete)
+            if( _.isEmpty( toDelete ) )
+                return res( undefined )
+
+            Mongoose.models.Field.deleteFields( toDelete )
+                .then( fieldData => {
+                    const fieldIds = _.map( fieldData, d => d._id.toString() )
+
+                    console.log('#THIS:',this)
+                    console.log('# Removing From _fields:',fieldIds)
+                    // Remove the fields from the partition docs _fields element
+
+                    _.remove( this._fields, f => _.includes( fieldIds, f._id.toString() ) )
+
+                    this.markModified('_fields')
+
+                    this.save()
+                        .then( data => res( fieldIds ) )
+                        .catch( err => rej( _.setException( err ) ) )
+                })
+                .catch( err => rej( _.setException( err ) ) )
+
+        }).asCallback( ( args  => _.findLast( args, a => _.isFunction( a ) ) )( arguments ) )
+    }
+    
+    // STATIC METHODS -----------------------------------------------------
+
+    PartitionSchema.statics.getPartitionById = function( findObj, limitOrCb ){
+        return new Promise( ( res, rej ) => {
+            let _findObj = null
+
+            if( _m.isObjectId( findObj ) ){
+                _findObj = { _id: findObj.toString() }
+            }
+            else if( _.isObject( findObj ) ){
+                _findObj = findObj
+            }
+            else {
+                return rej( ( ! findObj ? 'No' : 'Invalid') + ' partition criteria provided' )
+            }
+
+            console.log('Query:',_findObj)
+
+            const docQuery =  Mongoose.models.Partition
+                .find( _findObj )
+                .limit( ( _.isNumber( limitOrCb ) ? limitOrCb : 1 ) )
+            
+
+            return docQuery.exec( ( err, docData ) => {
+                if( err ){
+                    console.error('Error:',err)
+                    return rej( err )
+                }
+
+                console.log('Result:',docData)
+                return res( docData )
+            })
+        }).asCallback( ( args  => _.findLast( args, a => _.isFunction( a ) ) )( arguments ) )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Delete a partition by partition ID
+     *
+     * @param   {object|string}     options                 Either the partition ID, or an object of the partition ID
+     *                                                      and the requireDelete boolean
+     * @param   {function}          callback                Callback to execute, or Promise returned
+     * @var     {string}            options.partitionId     Partition ID to delete
+     * @var     {boolean}           options.requireDelete   If true, then a failure will be returned when an asset
+     *                                                      is not deleted (for any reason, such as it doesn't exist
+     *                                                      in the first place)
+     * @returns {Promise}           Promise returned, or the callback is executed if it's defined
+     * @todo    Allow deletion by partition name - Check if partitionId is not numeric, then go by name
+     */
+    PartitionSchema.statics.deletePartition = function( options, callback ) {
+        // partitionId, requireDelete = false
+        return new Promise( ( res, rej ) => {
+            let requireDelete = false
+            let fields = true
+            let partitionId
+
+            // If were given just the partition ID
+            if( _m.isObjectId( options ) ){
+                requireDelete = false
+                partitionId = options.toString()
+            }
+            // If were given an object, make sure it contains the partition ID, at the very least
+            else if( _.isObject( options ) ){
+                // Check the partition ID
+                if( _m.isObjectId( options.partitionId ) )
+                    partitionId = options.partitionId.toString()
+                else
+                    return rej( new AppError( 'partition.delete.noId' ) )
+
+                // Check if were requiring the partition to be deleted to return success (meaning if it was never there
+                // TO delete, then still throw an error)
+                if( ! _.isUndefined( options.requireDelete ) )
+                    requireDelete = !!options.requireDelete
+
+                if( ! _.isUndefined( options.fields ) )
+                    fields = !!options.fields
+            }
+            else {
+                return rej( new AppError( 'partition.delete.options' ) )
+            }
+
+
+            this.findById( partitionId )
+                .then( partitionData => {
+
+                })
+                .catch( err => rej( _.setException( err ) ) )
+
+            // Execute the query!
+            this.findByIdAndRemove( partitionId )
+                .then( partitionData => {
+                    // If data is empty (happens when it didnt exist), and requireDelete is
+                    // true, then throw a reject
+                    // @todo Should add some better detail here as to why it failed..
+                    if( _.isEmpty( partitionData ) &amp;&amp; requireDelete )
+                        rej( new AppError({
+                            code: 'partition.delete.partitionNotFound',
+                            data: partitionId
+                        }) )
+
+                    // Resolve the promise with the partition data
+                    res( partitionData || null )
+                })
+                .catch( err => rej( new AppError({
+                    code: 'partition.delete.deleteFailed',
+                    data: err
+                }) ) )
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Retrieve select Partition Field ID's by the field names (STATIC METHOD)
+     *
+     * @param   {object}                partitionId     Partition object
+     * @param   {string|array|object}   fieldNames      String of field names, or array of multiple
+     * @param   {function}              callback        Callback to execute (As opposed to a Promise)
+     * @return  {object}        Object of field IDs and Names, with the field names as the keys
+     * @todo    Should this be a methid instead of a static?
+     */
+    PartitionSchema.statics.getFieldIdsByName = function( partitionId, fieldNames, callback ) {
+        return new Promise( ( res, rej ) => {
+            this.findById( partitionId )
+                .then( data => {
+                    const fields = _.chain( data._fields )
+                        .filter( f => _.includes( fieldNames, f.name ) )
+                        .reduce( ( end, f ) => {
+                            end[ f.name ] = f._id
+                            return end
+                        },{})
+                        .value()
+
+                    if( ! fields )
+                        return rej( new Error( 'Error getting fields' ) )
+
+                    res( fields )
+                })
+                .catch( err => rej( _.setException( err ) ) )
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Get partition data, with or without the fields populated
+     *
+     * @param   {string}    partitionId     Partition ID to retrieve data for
+     * @param   {function}  callback        Callback to execute, or Promise returned
+     * @return  {Promise}   Returns a promise with a Mongoose model as the only param
+     */
+    PartitionSchema.statics.getPartition = function( partitionId, callback ) {
+        return new Promise( ( res, rej ) => {
+            if( ! _m.isObjectId( partitionId ) ){
+                Log.error( `Unable to find partition with value '${partitionId}' - Not a MongoDB ObjectId` )
+                return rej( new AppError( 'partition.get.options.noId' ) )
+            }
+
+            this.findById( partitionId ).exec( ( err, result ) => {
+                if( err )
+                    return rej( new AppError({
+                        code: 'partition.get.queryFailed',
+                        data: err
+                    }) )
+                // Checking for null is the best way to check if an empty result was returned.
+                // Odd that even though (when nothing is returned) its null, but typeof is an
+                // object, and when results ARE found, the result.length is 0
+                if( _.isEmpty( result ) ) {
+                    //return rej( new Error( `No results found for Partition ID ${partitionId}` ) )
+                    //return rej( new exception( `No results found for Partition ID ${partitionId}`, exception.NOT_FOUND ) )
+                    return res( {} )
+                }
+
+                res( result )
+            } )
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Get multiple partitions, either partitions specified in an array, or all partitions
+     *
+     * @param   {string}    partitionId     Partition ID to retrieve data for
+     * @param   {function}  callback        Callback to execute, or Promise returned
+     * @return  {Promise}   Returns a promise with a Mongoose model as the only param
+     */
+    PartitionSchema.statics.getPartitions = function( searchOrCb, callback ) {
+        return new Promise( ( res, rej ) => {
+            if( _.isArray( searchOrCb ) ){
+
+            }
+            else if( _.isObject( searchOrCb ) ){
+
+            }
+            else if( searchOrCb !== null &amp;&amp; searchOrCb !== undefined ){
+
+            }
+
+            /*if( ! _m.isObjectId( partitionId ) ){
+                Log.error( `Unable to find partition with value '${partitionId}' - Not a MongoDB ObjectId` )
+                return rej( new AppError( 'partition.get.options.noId' ) )
+            }*/
+
+            this.find().exec( ( err, result ) => {
+                if( err )
+                    return rej( new AppError({
+                        code: 'partition.get.queryFailed',
+                        data: err
+                    }) )
+                // Checking for null is the best way to check if an empty result was returned.
+                // Odd that even though (when nothing is returned) its null, but typeof is an
+                // object, and when results ARE found, the result.length is 0
+                if( _.isEmpty( result ) ) {
+                    //return rej( new Error( `No results found for Partition ID ${partitionId}` ) )
+                    //return rej( new exception( `No results found for Partition ID ${partitionId}`, exception.NOT_FOUND ) )
+                    return res( {} )
+                }
+
+                res( result )
+            } )
+        }).asCallback( ( args  => _.findLast( args, a => _.isFunction( a ) ) )( arguments ) )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Create a new Partition, including the partitions fields
+     *
+     * @param   {object}    settings                Object of the partition data, requires atleast name, status and fields
+     * @param   {function}  callback                Callback to execute, or Promise returned
+     * @var     {string}    settings.name           Name of partition
+     * @var     {boolean}   settings.status         Status of the partition (Default: true)
+     * @var     {string}    settings.description    Partition description
+     * @var     {array}     settings.groups         List of permitted group IDs
+     * @var     {array}     settings.fields         Field configs (passed to Field model)
+     * @return  {Promise}   Promise returned, or callback executed (if defined)
+     */
+    PartitionSchema.statics.createPartition = function( settings, callback ) {
+        return new Promise( ( res, rej ) => {
+            if( ! _.isObject( settings ) )
+                return rej(
+                    new AppError( 'partition.create.settings.missing' )
+                    //new Error( 'Must provide an object when creating a partition' )
+                )
+
+            if( _.isEmpty( settings.name ) )
+                return rej( new AppError( 'partition.create.settings.missing.name' ) )
+
+            if( _.isEmpty( settings.fields ) )
+                return rej( new AppError( 'partition.create.settings.missing.fields' ) )
+
+            // Grab the fields..
+            const fields = settings.fields
+
+            // Remove the fields from the partition data
+            _.unset( settings, 'fields' )
+
+            // Verify there's only one primary field (or none)
+            if( _.filter( fields, f => f.primary === true ).length > 1 )
+                return rej( new AppError( 'partition.create.settings.primaries' ) )
+
+            // Verify that the field names are unique
+            if( _.isUniq( fields, 'name' ) === false )
+                return rej( new AppError( 'partition.create.settings.duplicate.fieldName' ) )
+
+            const newPartition = new this( settings )
+
+            // Create/save new partition
+            newPartition.save()
+                .then( partitionData => {
+                    const fieldIds = []
+
+                    // Asynchronously add the new fields, saving the field ID's to the fieldIds array
+                    Async.each( fields, ( fld, done ) => {
+                        new Mongoose.models.Field( fld ).save()
+                            .then( data => {
+                                fieldIds.push( data._id )
+                                done()
+                            })
+                            .catch( err => {
+                                Log.error(`Failed to create the partition field ${fld.name || 'Unknown'}`)
+                                done( err )
+                            })
+                    }, err => {
+                        if( err )
+                            return rej( new AppError({
+                                code: 'partition.create.result.fields.saveFailed',
+                                data:  err.message
+                            }))
+
+                        partitionData._fields = fieldIds
+                        partitionData.markModified('_fields')
+
+                        return partitionData.save()
+                            .then( data => {
+                                // @todo This should be able to populate the _fields of the data document, without having to execute another find (via this.getPartition)
+                                res( this.getPartition( data._id ) )
+                            } )
+                            .catch( err => rej( new AppError({
+                                code: 'partition.create.result.partition.updateFailed',
+                                data:  err.message
+                            }) ) )
+                    })
+                } )
+                .catch( err => rej( new AppError({
+                    code: 'partition.create.result.partition.saveFailed',
+                    data:  err.message
+                }) ) )
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    /**
+     * Retrieve the assets in a specific partition by the partition ID . The difference between this and the
+     * Assets.getAssets() method is this takes the partition ID, not the asset ID(s)
+     *
+     * @param   {Mixed}                 options             Partition ID (string or ObjectId), or an options object
+     * @param   {function}              callback            Callback to execute, or Promise returned
+     * @var     {string|object|array}   options.partitionId Single or multiple partition ID
+     * @var     {string|boolean}        options.indexed     If `true`, then instead of returning an array of asset
+     *                                                      objects, an object of objects is returned, with the Asset ID
+     *                                                      as the indexes; If `identifier`, then the asset identifiers
+     *                                                      will be the object keys
+     * @returns {Promise}   Promise returned, or callback executed if provided
+     */
+    PartitionSchema.statics.getAssets = function( options, callback ) {
+        return new Promise( ( res, rej ) => {
+            let indexedBy
+
+            // Determine if the results should be an indexed object or not
+            if( _.isUndefined( options.indexed ) )
+                indexedBy = false
+            else if( options.indexed === true )
+                indexedBy = 'id'
+            else if( _.includes(['identifier','identifiers'], options.indexed ) )
+                indexedBy = 'identifier'
+            else
+                indexedBy = false
+
+            // This where object will get populated, and used in the Mongoose find() query
+            const where = { }
+
+            // Function to process an array of partition ID, altering the where object directly
+            const processPartitionOpt = optVal => {
+                if( _m.isObjectId( optVal ) )
+                    where._partition = optVal
+
+                // Anything else shouldn't be accepted
+                else
+                    return rej( new AppError({
+                        code: 'partition.assets.get.options.badPartitionId',
+                        data: _m.typeof( optVal )
+                    }) )
+            }
+
+            // If the options param is anything other than an object, handle it as the partitionId value
+            //if( _.includes([ 'string','objectid' ], _m.typeof( options ) ) ){
+            if( _m.isObjectId( options ) ) {
+                processPartitionOpt( options )
+            }
+
+            // If its an object, it can contain settings other than just the partitionId
+            else if( _.isPlainObject( options ) ){
+                if( _.isEmpty( options.partitionId ) )
+                    return rej( new AppError( 'partition.assets.get.options.noPartitionId' ) )
+
+                // Parse the partitionId object, modifying the where object
+                processPartitionOpt( options.partitionId )
+            }
+
+            // If it gets here, then no partition ID was provided
+            else {
+                return rej( new AppError( 'partition.assets.get.options.noPartitionId' ) )
+            }
+
+            Mongoose.models.Asset.find( where )
+                /*.then( assetData => {
+                    if( _.isEmpty( assetData ) )
+                        return rej( new Error( `No assets found using filter: ${JSON.stringify(where)}` ) )
+
+                    // Now populate ethe fields and resolve the assetDocs
+                    const populate = Promise.promisify( this.populate )
+
+                    return populate.call(assetData._partition,{ path: '_fields' })
+                })
+                .then( assetData => {
+                    res( assetData )
+                })*/
+                .then( assetData => {
+                    // If no assets were found, don't bother populating anything
+                    if( _.isEmpty( assetData ) )
+                        // Return the appropriate empty element type
+                        return indexedBy ? res({}) : res([])
+
+                    // Now populate ethe fields and resolve the assetDocs
+                    this.populate( assetData._partition, { path: '_fields' }, ( err, result ) => {
+                        if( err )
+                            return rej( new AppError({
+                                code: 'partition.assets.get.populateFailed',
+                                data: err
+                            }) )
+
+                        if( indexedBy === 'id' )
+                            return res( _.mapKeys( assetData, a => a._id.toString() ) )
+
+                        if( indexedBy === 'identifier' )
+                            return res( _.mapKeys( assetData, a => a.identifier.toString() ) )
+
+                        return res( assetData )
+                    } )
+                })
+                .catch( err => rej( new AppError({
+                    code: 'partition.assets.get.failedQuery',
+                    data: err
+                }) ) )
+        }).asCallback( callback )
+    }
+
+    // --------------------------------------------------------------------
+
+    Log.debug('Returning compiled model schema')
+
+    return Mongoose.model( ModelName, PartitionSchema )
+}
+
+    exports.createThing = ( name, data ) => {
+        return new Promise( ( res, rej ) => {
+            if( doesItExist( name ) )
+                return rej( new AppError({
+                    code: 'partition.verifyAttr.options.badAssetId',
+                    data: name
+                }) )
+
+            // Other stuff...
+        })
+    }
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Jun 27 2017 10:39:34 GMT-0700 (MST) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/linenumber.js"></script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+[submodule "sasset-core-beta"]
+	path = sasset-core-beta
+	url = git@github.com:SASSET/sasset-core-beta.git

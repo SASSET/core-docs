@@ -1,0 +1,1 @@
+../../../sasset-core-beta/lib/helpers/mongoose-helper.js

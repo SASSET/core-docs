@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>lib/utils/gizmo.js - Documentation</title>
+
+    <script src="scripts/prettify/prettify.js"></script>
+    <script src="scripts/prettify/lang-css.js"></script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc.css">
+</head>
+<body>
+
+<input type="checkbox" id="nav-trigger" class="nav-trigger" />
+<label for="nav-trigger" class="navicon-button x">
+  <div class="navicon"></div>
+</label>
+
+<label for="nav-trigger" class="overlay"></label>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-AccountLib.html">AccountLib</a><ul class='methods'><li data-type='method'><a href="module-AccountLib.html#.getAccount">getAccount</a></li><li data-type='method'><a href="module-AccountLib.html#.setAccount">setAccount</a></li></ul></li><li><a href="module-AssetModel.html">AssetModel</a><ul class='methods'><li data-type='method'><a href="module-AssetModel.html#.create">create</a></li><li data-type='method'><a href="module-AssetModel.html#.delete">delete</a></li><li data-type='method'><a href="module-AssetModel.html#.findAsset">findAsset</a></li><li data-type='method'><a href="module-AssetModel.html#.findAssets">findAssets</a></li><li data-type='method'><a href="module-AssetModel.html#.findByIdentifier">findByIdentifier</a></li><li data-type='method'><a href="module-AssetModel.html#.get">get</a></li><li data-type='method'><a href="module-AssetModel.html#.getPartitionsAssets">getPartitionsAssets</a></li><li data-type='method'><a href="module-AssetModel.html#.setIdentifiers">setIdentifiers</a></li><li data-type='method'><a href="module-AssetModel.html#createRevisionHistory">createRevisionHistory</a></li><li data-type='method'><a href="module-AssetModel.html#delete">delete</a></li><li data-type='method'><a href="module-AssetModel.html#lastRevision">lastRevision</a></li><li data-type='method'><a href="module-AssetModel.html#~delete">delete</a></li><li data-type='method'><a href="module-AssetModel.html#~set">set</a></li><li data-type='method'><a href="module-AssetModel.html#~value">value</a></li></ul></li><li><a href="module-PartitionModel.html">PartitionModel</a></li></ul><h3>Namespaces</h3><ul><li><a href="Gizmo.html">Gizmo</a><ul class='methods'><li data-type='method'><a href="Gizmo.html#.stripCommonRoot">stripCommonRoot</a></li><li data-type='method'><a href="Gizmo.html#.summarizePaths">summarizePaths</a></li><li data-type='method'><a href="Gizmo.html#.valueTypes">valueTypes</a></li></ul></li><li><a href="mongoose-helper.html">mongoose-helper</a><ul class='methods'><li data-type='method'><a href="mongoose-helper.html#.file2model">file2model</a></li><li data-type='method'><a href="mongoose-helper.html#.getCallerModelName">getCallerModelName</a></li><li data-type='method'><a href="mongoose-helper.html#.getFileStack">getFileStack</a></li><li data-type='method'><a href="mongoose-helper.html#.getLastCb">getLastCb</a></li><li data-type='method'><a href="mongoose-helper.html#.getObjectId">getObjectId</a></li><li data-type='method'><a href="mongoose-helper.html#.getObjectIds">getObjectIds</a></li><li data-type='method'><a href="mongoose-helper.html#.isObjectId">isObjectId</a></li><li data-type='method'><a href="mongoose-helper.html#.isPopulated">isPopulated</a></li><li data-type='method'><a href="mongoose-helper.html#.typeof">typeof</a></li></ul></li></ul>
+</nav>
+
+<div id="main">
+    
+    <h1 class="page-title">lib/utils/gizmo.js</h1>
+    
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code> 'use strict'
+
+const _             = require( 'moar-lodash' )
+const Promise       = require( 'bluebird' )
+const Async         = require( 'async' )
+const Util          = require( 'util' )
+const AppRoot       = require( 'app-root-path' )
+const Path          = require( 'path' )
+const Log           = AppRoot.require( './lib/utils/logger' )({ helper: 'Gizmo'})
+
+
+Log.debug( `Gizmo helper file loaded` )
+
+/**
+ * Gizmo is just for... other shut
+ *
+ * @classdesc This is where any ad hoc functions that don't fit in any other library will go. Especially if they get 
+ * used in more than one location/library.
+ * @namespace   Gizmo
+ * @description Just random functions for anything
+ */
+const _exports = {}
+
+/**
+ * Iterate through an array of absolute file paths, replacing or removing the common root directories from each element. 
+ * This is useful for when you don't need to have the entire absolute path in the name.
+ *
+ * @function    stripCommonRoot
+ * @memberof    Gizmo
+ * @param 		{array|object} 		pathCollection 	  Array of paths..
+ * @param 		{?(binary|string)=} rootReplacement	  Determine what the root directory will be after its parsed - set
+ * 													  to null or undefined to use the dirDivider value (see first 
+ * 													  example below); false to not prepend anything at all (example #2); 
+ * 													  Or any string to replace the common path with (example #3)
+ * @param 		{?string} 			dirDivider 		  String to use for directory separator (/ by default, \ on windows)
+ * @return 		{array} 							  Modified version of the provided array
+ * @note 		Should the dirDivider parameter be restricted to either a forward or backward slash? And a single char?
+ *
+ * @example // Replace the common root path with a forward slash (by default)
+ * Gizmo.stripCommonRoot([ 
+ *    '/home/jdoe/app/lib/helpers/mongoose-helper.js',
+ *    '/home/jdoe/app/dev/file-foo.js',
+ *    '/home/jdoe/app/dev/some-file.js' 
+ * ])
+ * // => [ '/lib/helpers/mongoose-helper.js', '/dev/file-foo.js', '/dev/some-file.js' ] 
+ *
+ * @example // Remove the common root and dont prepend the paths with the dirDivider OR rootReplacement
+ * Gizmo.stripCommonRoot([ 
+ *    '/home/jdoe/app/lib/helpers/mongoose-helper.js',
+ *    '/home/jdoe/app/dev/file-foo.js',
+ *    '/home/jdoe/app/dev/some-file.js' 
+ * ], false)
+ * // => [ 'lib/helpers/mongoose-helper.js', 'dev/file-foo.js', 'dev/some-file.js' ] 
+ *
+ * @example // Same as above example, except 
+ * Gizmo.stripCommonRoot([ 
+ *    '/home/jdoe/app/lib/helpers/mongoose-helper.js',
+ *    '/home/jdoe/app/dev/file-foo.js',
+ *    '/home/jdoe/app/dev/some-file.js' 
+ * ], '/home/jdoe/.../')
+ * // => [ '/lib/helpers/mongoose-helper.js', '/dev/file-foo.js', '/dev/some-file.js' ] 
+ *
+ * @example // Change the paths
+ * Gizmo.stripCommonRoot([ 
+ *    '/home/jdoe/app/lib/helpers/mongoose-helper.js',
+ *    '/home/jdoe/app/dev/file-foo.js',
+ * 	  '/home/jdoe/app/dev/some-file.js' 
+ * ], '~/')
+ * // => [ '~/lib/helpers/mongoose-helper.js', '~/dev/file-foo.js', '~/dev/some-file.js' ] 
+ *
+ * @example // Using the Windows directory separation character
+ * Gizmo.stripCommonRoot([ 
+ *     '\\home\\jdoe\\app\\lib\\helpers\\mongoose-helper.js',
+ *     '\\home\\jdoe\\app\\dev\\file-foo.js',
+ * 	   '\\home\\jdoe\\app\\dev\\some-file.js' 
+ * ], null, '\\')
+ * // => [ '\lib\helpers\mongoose-helper.js', '\dev\file-foo.js', '\dev\some-file.js' ] 
+ */
+_exports.stripCommonRoot = ( pathCollection, rootReplacement = null, dirDivider = '/' ) => {
+	// Verify the collection is an array or object
+	if ( ! _.isArray( pathCollection ) &amp;&amp; ! _.isObject( pathCollection ) ){
+		Log.debug( `Expected an array or an object - received ${_.typeof(pathCollection)}` )
+
+		return false
+	}
+
+	// If the collection is an Object, then redefine the collection to the values in said object
+	if ( _.isObject( pathCollection ) ){
+		Log.debug( `Path collection provided was an object - converting it to an array of the object keys` )
+
+		pathCollection = _.values( pathCollection )
+	}
+
+	// If no paths were provided, then return that early
+	if ( _.isEmpty( pathCollection ) ){
+		Log.debug( `Path collection provided was empty - returning empty array` )
+
+		return []
+	}
+
+	// Verify that the collection contains only string values..
+	if ( ! _.every( pathCollection, _.isString ) ){
+		Log.warn( `Expected an array of strings - received ${_.typeof(pathCollection)}` )
+
+		return false
+	}
+
+	// If there is an invalid directory divider (dirDivider) specified, then return false..
+	if ( ( ! dirDivider || ! _.isString( dirDivider ) ) &amp;&amp; dirDivider !== false ){
+		Log.warn( 'Directory separator either contains an invalid value, or no value at all - Be sure the value is ' 
+			+ 'either a boolean value, a string, or nothing at all (undefined)' )
+
+		return false
+	}
+
+	let pathPrefix = dirDivider
+
+	//console.log('[rootReplacement] typeof: %s; _.typeof: %s; value: %s', typeof rootReplacement, _.typeof( rootReplacement ), rootReplacement)
+
+	// If rootReplacement is manually set to false (or any other falsey), then that means NO prefix 
+	if ( rootReplacement !== null &amp;&amp; rootReplacement !== undefined &amp;&amp; ! rootReplacement ){
+		pathPrefix = ''
+	}
+
+	// If it's set to true, or set to null
+	else if( rootReplacement === true || rootReplacement === null ){
+		pathPrefix = dirDivider
+	}
+	
+	// If a string is provided, use that for the pathPrefix..
+	else if( _.isString( rootReplacement ) ){
+		pathPrefix = rootReplacement
+	}
+	
+	// Anything else should error out
+	else {
+		Log.warn( `Invalid value set for rootReplacement, Expecting null, or a type of boolean, ` 
+			+ `string, or nothing at all (undefined) - received type ${_.typeof(rootReplacement)}` )
+
+		throw new TypeError( `Invalid value specified for root directory replacement value. Expecting null, or a type of boolean, ` 
+			+ `string, or nothing at all (undefined) - received type ${_.typeof(rootReplacement)}` )
+	}
+
+	Log.debug( `Common root path will be substituted with '${pathPrefix}'` )
+
+	/**
+	 * Strip a path into its segments (folders)
+	 */
+	const splitPath = p => _( p ).split( dirDivider ).dropWhile( o => _.includes( [''], _.trim( o ) ) ).value()
+
+	/**
+	 *
+	 * Convert an array (of directory path elements) to a string (path)
+	 */
+	const arrToPath = p => pathPrefix + _.join( p, dirDivider )
+
+	// Determine the prefix to use. This is '/' by de
+	//const pathPrefix 	= ( _.isString( rootReplacement ) &amp;&amp; ! _.isEmpty( rootReplacement ) ? rootReplacement : '' )
+
+	let currentVal 	= null
+
+	// .replace('foo,bar,baz,bang,quux', new RegExp("ba","g"), '???') 
+	/**
+	 * 	This is used in combination with lodashes _.every method to compare specific segments in a list of arrays. 
+	 * This is done by caching the segment in the currentVal variable, and compare each s
+ 	 */
+	const isFirstSame = p => {
+		// If the current value isnt set, then assume this is the first time this is being called (for )
+		if ( currentVal === null ){
+			currentVal = p[0]
+			return true
+		}
+
+		return p[0] == currentVal
+	}
+
+	let splitPaths 	= _.map( pathCollection, splitPath )
+	let result 	 	= null
+
+	// Iterate over the segments of the path, checking if all of the values for this segment in every path is the same.
+	do {
+		// Look through each path in the splitPaths, if the current column value matches the value in the previously 
+		// checked row, then keep looping
+		if ( _.every( splitPaths, isFirstSame ) ){
+			// If the value of this column is the same for every row, then redefine splitPaths, dropping the first 
+			// path segment
+			splitPaths = _.map( splitPaths, _.drop )
+			currentVal = null
+		}
+
+		// When we reach a segment thats not the same in every path, then set the `result` variable, which will abort 
+		// the do/while loop
+		else {
+			//result = _.map( splitPaths, p => pathPrefix + '/' + _.join( p, '/' ) )
+			result = _.map( splitPaths, arrToPath )
+		}
+	}
+	// Stop the loop when one of the iterations defined the result value
+	while ( ! result )
+	
+	return result
+}
+
+/**
+ * Iterate through an array of absolute file paths, removing the common paths from each absolute path. The shortened 
+ * filenames are returned in an array, while the common path 
+ *
+ * @function    summarizePaths
+ * @alias 		sumPaths
+ * @memberof    Gizmo
+ * @param 		{array} 	pathArray 		Array of paths..
+ * @returns		{Object} 	pathObj			Object containing the common absolute path, and an array of files (with 
+ * 											paths relative to the common absolute path)
+ * @returns		{string} 	pathObj.path 	The absolute path up to the last common folder that all files share
+ * @returns 	{array} 	pathObj.files 	Array of filenames, paths starting where {pathObj.path} left off
+ *
+ * @example  
+ * Gizmo.summarizePaths([ 
+ *     '/home/jdoe/app/lib/helpers/mongoose-helper.js',
+ *     '/home/jdoe/app/dev/file-foo.js',
+ *     '/home/jdoe/app/dev/some-file.js' 
+ * ])
+ * // => { 
+ *     path: '/home/jdoe/app',
+ *         files: [ 
+ *             '/lib/helpers/mongoose-helper.js', '/dev/file-foo.js', '/dev/some-file.js' 
+ *         ] 
+ *     }
+ */
+_exports.summarizePaths = _exports.sumPaths = pathArray => {
+	if ( ! _.isArray( pathArray ) ){
+		Log.debug( `Expected an array - received ${_.typeof(pathArray)}` )
+
+		return false
+	}
+
+	if ( ! _.size( pathArray ) ){
+		return []
+	}
+
+	if ( ! _.every( pathArray, _.isString ) ){
+		Log.debug( `Expected an array of strings - received ${_.typeof(pathArray)}` )
+
+		return false
+	}
+
+	let pathsSplit = _.map( pathArray, p => _.split( p, '/') )
+	let currentVal = null
+	let result = null
+	let commonRoot = []
+
+	let isFirstSame = p => {
+		// If the 'currentVal' is null, then this is the first iteration, so set it to this
+		// value, which will be compared with all the others
+		if ( currentVal === null ){
+			currentVal = p[0]
+			return true
+		}
+
+		// Not the first iteration, compare it to the value
+		return p[0] == currentVal
+	}
+
+	// Iterate over the segments of the path, checking if all of the values for this segment in every path is the same.
+	do {
+		// Check if the [0] element in each array is the same..
+		if ( _.every( pathsSplit, isFirstSame ) ){
+			// .. If they are all the same, then drop the first item from each path,
+			pathsSplit = _.map( pathsSplit, _.drop )
+			// Add the path segment to the common root array/path
+			commonRoot.push( currentVal )
+			// Reset the currentVal
+			currentVal = null
+		}
+
+		// When we reach a segment thats not the same in every path, then set the `result` variable, which will abort 
+		// the do/while loop
+		else {
+			result = _.map( pathsSplit, p => '/' + _.join( p, '/' ) )
+		}
+	}
+	while ( result === null )
+	
+	return {
+		path : commonRoot.join('/'),
+		files: result
+	}
+}
+
+/**
+ * Retrieve the types of values in an array or an object. 
+ *
+ * @function    valueTypes
+ * @alias 		valTypes
+ * @memberof    Gizmo
+ * @param 		{(Object|array)}	collection 	Array or object (collection of data).
+ * @param 		{?function} 		filter 		Filter the collection using a simple function
+ * @return 		{array} 						Array of types of values in the collection
+ *
+ * @example // A collection of random values with different types
+ * var valTypeCollection = [ 
+ *     1, 'Str', false, [], null, new Array(), undefined, {}, 
+ *     new Date(), function(){}, (s => `This is a ${s}`)('str')
+ * ]
+ *
+ * // Example showing how duplicate value types only display the value type once
+ * Gizmo.valueTypes( valTypeCollection ).join(', ')
+ * // => number, string, boolean, array, null, undefined, object, date, function
+ *
+ * @example //...
+ * Gizmo.valueTypes( valTypeCollection, val => ! _.includes( [ 'string','number' ], _.typeof( val, true ) ) ).join(', ')
+ *
+ * @example // Using Gizmo.valueTypes to verify all parameters are string types
+ * function onlyAcceptsStringParams( foo, bar, baz, bang ){
+ *     var invalidParamTypes = Gizmo.valueTypes( arguments, f => ! _.isString(f) )
+ *
+ *     if ( invalidParamTypes.length > 0 ) 
+ *         throw new Error( 'Expected ll parameters to be strings - received invalid type(s): ' + invalidParamTypes.join(', ') ) 
+ * }
+ */
+_exports.valTypes = 
+_exports.valueTypes = ( collection, filter ) => {
+
+	if ( _.isObject( collection ) ){
+		collection = _.values( collection )
+	}
+	else if ( ! _.isArray( collection ) ){
+		throw new Error( `Helper function valueTypes expected an object or array for the collection value - received type: ${_.type(collection)}` )
+	}
+
+	var chain = _.chain( collection )
+
+	if ( _.isFunction( filter ) ){
+		chain = chain.filter( filter )
+	}
+
+	return chain
+		//.map( v => _.lowerCase( _.typeof( v ) ) )
+		.map( _.typeof )
+		.map( _.lowerCase )
+		.uniq()
+		.value() 
+}
+
+module.exports = _exports
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Jun 27 2017 11:28:14 GMT-0700 (MST) using the <a href="https://github.com/clenemt/docdash">docdash</a> theme.
+</footer>
+
+<script>prettyPrint();</script>
+<script src="scripts/linenumber.js"></script>
+</body>
+</html>

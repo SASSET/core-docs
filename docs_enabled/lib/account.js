@@ -1,0 +1,1 @@
+../../sasset-core-beta/lib/account.js

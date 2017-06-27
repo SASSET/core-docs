@@ -1,0 +1,24 @@
+{
+  "name": "sasset-core-docs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "jsdoc": "^3.4.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "make": "./make.sh",
+    "updatesrc": "git submodule update --rebase --remote"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SASSET/sasset-core-docs.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/SASSET/sasset-core-docs/issues"
+  },
+  "homepage": "https://github.com/SASSET/sasset-core-docs#readme"
+}
