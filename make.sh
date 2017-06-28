@@ -28,7 +28,7 @@ declare -A sasset_docs
 sasset_docs[root]="${sasset_base}/sasset-core-docs"
 sasset_docs[template]="${sasset_docs[root]}/templates/docdash-custom"
 sasset_docs[input]="${sasset_docs[root]}/docs_enabled"
-sasset_docs[output]="${sasset_docs[root]}/html"
+sasset_docs[output]="${sasset_docs[root]}/docs"
 sasset_docs[jsdocbin]="${sasset_docs[root]}/node_modules/jsdoc/jsdoc.js"
 
 declare -A pattern
