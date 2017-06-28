@@ -1,1 +1,0 @@
-../../sasset-core-beta/models/Asset.js
